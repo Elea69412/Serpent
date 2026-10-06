@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Le Serpent</title>
+  <style>
+    :root { --bg: #0f172a; --fg: #f8fafc; --muted: #94a3b8; --serpent: #22c55e; --pomme: #f43f5e; --grille: #1e293b; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg);
+      font-family: system-ui, -apple-system, sans-serif; user-select: none;
+      display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px;
+      touch-action: none;
+    }
+    header { display: flex; justify-content: space-between; width: 100%; max-width: 480px; font-size: 18px; font-weight: 600; }
+    #cadre { position: relative; width: 100%; max-width: 480px; aspect-ratio: 1; }
+    canvas { width: 100%; height: 100%; border-radius: 12px; background: var(--grille); display: block; }
+    #ecran {
+      position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 14px; text-align: center; padding: 16px; background: rgba(15, 23, 42, .85); border-radius: 12px;
+    }
+    h1 { margin: 0; font-size: 36px; }
+    p { margin: 0; color: var(--muted); }
+    button {
+      font: inherit; font-weight: 700; border: 0; border-radius: 999px; cursor: pointer;
+      background: var(--serpent); color: #052e16; font-size: 20px; padding: 14px 32px;
+    }
+    #croix { display: grid; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(2, 56px); gap: 8px; }
+    #croix button { border-radius: 14px; padding: 0; font-size: 24px; background: var(--grille); color: var(--fg); }
+    #croix [data-dir="haut"] { grid-column: 2; }
+    #croix [data-dir="gauche"] { grid-column: 1; grid-row: 2; }
+    #croix [data-dir="bas"] { grid-column: 2; grid-row: 2; }
+    #croix [data-dir="droite"] { grid-column: 3; grid-row: 2; }
+    @media (hover: hover) and (pointer: fine) { #croix { display: none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <span>Score : <span id="score">0</span></span>
+    <span>Record : <span id="record">0</span></span>
+  </header>
+  <div id="cadre">
+    <canvas id="jeu" width="400" height="400"></canvas>
+    <div id="ecran">
+      <h1>🐍 Le Serpent</h1>
+      <p>Mange les pommes sans te cogner.<br>Flèches du clavier, ou glisse le doigt sur mobile.</p>
+      <button id="jouer">Jouer</button>
+    </div>
+  </div>
+  <div id="croix">
+    <button data-dir="haut" aria-label="Haut">▲</button>
+    <button data-dir="gauche" aria-label="Gauche">◀</button>
+    <button data-dir="bas" aria-label="Bas">▼</button>
+    <button data-dir="droite" aria-label="Droite">▶</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('jeu');
+    const ctx = canvas.getContext('2d');
+    const ecran = document.getElementById('ecran');
+    const scoreEl = document.getElementById('score');
+    const recordEl = document.getElementById('record');
+
+    const CASES = 20;
+    const T = canvas.width / CASES; // taille d'une case en pixels
+    const DIRS = { haut: [0, -1], bas: [0, 1], gauche: [-1, 0], droite: [1, 0] };
+
+    let serpent, dir, fileDirs, pomme, score, boucle, enJeu = false;
+    let record = 0;
+    try { record = Number(localStorage.getItem('record-serpent')) || 0; } catch (e) {}
+    recordEl.textContent = record;
+
+    function nouvellePomme() {
+      let p;
+      do {
+        p = { x: Math.floor(Math.random() * CASES), y: Math.floor(Math.random() * CASES) };
+      } while (serpent.some(s => s.x === p.x && s.y === p.y));
+      return p;
+    }
+
+    function demarrer() {
+      serpent = [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }];
+      dir = DIRS.droite;
+      fileDirs = [];
+      pomme = nouvellePomme();
+      score = 0;
+      scoreEl.textContent = score;
+      ecran.style.display = 'none';
+      enJeu = true;
+      planifier();
+    }
+
+    // Le serpent accélère au fur et à mesure des pommes mangées
+    function planifier() {
+      clearTimeout(boucle);
+      boucle = setTimeout(tour, Math.max(100, 200 - score * 2));
+    }
+
+    function tour() {
+      if (fileDirs.length) dir = fileDirs.shift();
+      const tete = { x: serpent[0].x + dir[0], y: serpent[0].y + dir[1] };
+
+      const horsGrille = tete.x < 0 || tete.y < 0 || tete.x >= CASES || tete.y >= CASES;
+      const surLuiMeme = serpent.slice(0, -1).some(s => s.x === tete.x && s.y === tete.y);
+      if (horsGrille || surLuiMeme) return perdu();
+
+      serpent.unshift(tete);
+      if (tete.x === pomme.x && tete.y === pomme.y) {
+        score++;
+        scoreEl.textContent = score;
+        pomme = nouvellePomme();
+      } else {
+        serpent.pop();
+      }
+      dessiner();
+      planifier();
+    }
+
+    function dessiner() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#f43f5e';
+      ctx.beginPath();
+      ctx.arc(pomme.x * T + T / 2, pomme.y * T + T / 2, T / 2 - 2, 0, Math.PI * 2);
+      ctx.fill();
+      serpent.forEach((s, i) => {
+        ctx.fillStyle = i === 0 ? '#86efac' : '#22c55e';
+        ctx.beginPath();
+        ctx.roundRect(s.x * T + 1, s.y * T + 1, T - 2, T - 2, 5);
+        ctx.fill();
+      });
+    }
+
+    function perdu() {
+      enJeu = false;
+      clearTimeout(boucle);
+      const nouveau = score > record;
+      if (nouveau) {
+        record = score;
+        recordEl.textContent = record;
+        try { localStorage.setItem('record-serpent', record); } catch (e) {}
+      }
+      ecran.innerHTML = `
+        <h1>${nouveau ? '🏆 Nouveau record !' : 'Perdu !'}</h1>
+        <p>Tu as mangé ${score} pomme${score > 1 ? 's' : ''}.</p>
+        <button id="rejouer">Rejouer</button>`;
+      ecran.style.display = 'flex';
+      document.getElementById('rejouer').onclick = demarrer;
+    }
+
+    // Les changements de direction sont mis en file pour ne pas pouvoir faire demi-tour
+    function tourner(nom) {
+      if (!enJeu) return;
+      const d = DIRS[nom];
+      const derniere = fileDirs[fileDirs.length - 1] || dir;
+      if (d[0] === -derniere[0] && d[1] === -derniere[1]) return;
+      if (d === derniere || fileDirs.length >= 2) return;
+      fileDirs.push(d);
+    }
+
+    const TOUCHES = {
+      ArrowUp: 'haut', ArrowDown: 'bas', ArrowLeft: 'gauche', ArrowRight: 'droite',
+      z: 'haut', s: 'bas', q: 'gauche', d: 'droite', w: 'haut', a: 'gauche'
+    };
+    document.addEventListener('keydown', e => {
+      if (!enJeu && (e.key === ' ' || e.key === 'Enter')) return demarrer();
+      const nom = TOUCHES[e.key];
+      if (nom) { e.preventDefault(); tourner(nom); }
+    });
+
+    let depart = null;
+    document.addEventListener('touchstart', e => { depart = e.touches[0]; }, { passive: true });
+    document.addEventListener('touchend', e => {
+      if (!depart) return;
+      const fin = e.changedTouches[0];
+      const dx = fin.clientX - depart.clientX, dy = fin.clientY - depart.clientY;
+      depart = null;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) return;
+      tourner(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'droite' : 'gauche') : (dy > 0 ? 'bas' : 'haut'));
+    });
+
+    document.querySelectorAll('#croix button').forEach(b =>
+      b.addEventListener('pointerdown', e => { e.preventDefault(); tourner(b.dataset.dir); })
+    );
+    document.getElementById('jouer').onclick = demarrer;
+  </script>
+</body>
+</html>
